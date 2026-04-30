@@ -1,6 +1,6 @@
 #! /bin/bash
 sudo apt update -y
-sudo apt install -y openjdk-17-jdk
+sudo apt install -y openjdk-21-jdk
 java -version
 
 sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
