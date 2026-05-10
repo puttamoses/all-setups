@@ -2,8 +2,8 @@
 set -e
 
 # =========================================================
-# Latest SonarQube Community Edition Setup
-# Ubuntu + Java 17
+# SonarQube Latest + Dependency Check Plugin Setup
+# Ubuntu 22.04 / 24.04
 # =========================================================
 
 SONAR_VERSION="25.5.0.107428"
@@ -11,19 +11,22 @@ SONAR_ZIP="sonarqube-${SONAR_VERSION}.zip"
 SONAR_DIR="/opt/sonarqube-${SONAR_VERSION}"
 SONAR_USER="sonar"
 
+PLUGIN_VERSION="6.0.0"
+PLUGIN_JAR="sonar-dependency-check-plugin-${PLUGIN_VERSION}.jar"
+
 # =========================================================
-# Update System
+# Update Packages
 # =========================================================
 sudo apt update -y
 
 # =========================================================
-# Install Java 17 + Utilities
+# Install Java 17 + Required Tools
 # =========================================================
 sudo apt install -y \
 openjdk-17-jdk \
 wget \
-unzip \
-curl
+curl \
+unzip
 
 # =========================================================
 # Verify Java
@@ -36,7 +39,7 @@ java -version
 sudo useradd -m -d /home/${SONAR_USER} -s /bin/bash ${SONAR_USER} || true
 
 # =========================================================
-# Download Latest SonarQube
+# Download SonarQube
 # =========================================================
 cd /opt
 
@@ -52,7 +55,7 @@ if [ ! -d "${SONAR_DIR}" ]; then
 fi
 
 # =========================================================
-# Permissions
+# Set Ownership
 # =========================================================
 sudo chown -R ${SONAR_USER}:${SONAR_USER} ${SONAR_DIR}
 
@@ -65,7 +68,7 @@ echo "fs.file-max=131072" | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 
 # =========================================================
-# Limits
+# User Limits
 # =========================================================
 echo "${SONAR_USER} soft nofile 131072" | sudo tee -a /etc/security/limits.conf
 echo "${SONAR_USER} hard nofile 131072" | sudo tee -a /etc/security/limits.conf
@@ -73,15 +76,21 @@ echo "${SONAR_USER} soft nproc 8192" | sudo tee -a /etc/security/limits.conf
 echo "${SONAR_USER} hard nproc 8192" | sudo tee -a /etc/security/limits.conf
 
 # =========================================================
-# Install Dependency-Check Plugin
+# Download Dependency Check Plugin
 # =========================================================
 cd /tmp
 
-wget -O sonar-dependency-check-plugin.jar \
-https://github.com/dependency-check/dependency-check-sonar-plugin/releases/latest/download/sonar-dependency-check-plugin.jar
+wget https://github.com/dependency-check/dependency-check-sonar-plugin/releases/download/${PLUGIN_VERSION}/${PLUGIN_JAR}
 
-sudo cp sonar-dependency-check-plugin.jar \
-${SONAR_DIR}/extensions/plugins/
+# =========================================================
+# Install Plugin
+# =========================================================
+sudo cp ${PLUGIN_JAR} ${SONAR_DIR}/extensions/plugins/
+
+# =========================================================
+# Remove Old PID If Exists
+# =========================================================
+sudo rm -f ${SONAR_DIR}/bin/linux-x86-64/SonarQube.pid
 
 # =========================================================
 # Start SonarQube
@@ -91,25 +100,36 @@ ulimit -n 131072
 ulimit -u 8192
 
 ${SONAR_DIR}/bin/linux-x86-64/sonar.sh stop || true
+sleep 5
 ${SONAR_DIR}/bin/linux-x86-64/sonar.sh start
 EOF
 
 # =========================================================
 # Wait for Startup
 # =========================================================
+echo "Waiting for SonarQube to start..."
 sleep 40
 
 # =========================================================
-# Status
+# Show Installed Plugins
 # =========================================================
-echo "========================================================="
-echo "SonarQube Started Successfully"
-echo "URL: http://<EC2-PUBLIC-IP>:9000"
-echo "SonarQube Version: ${SONAR_VERSION}"
-echo "Java Version: 17"
-echo "========================================================="
+echo "===================================================="
+echo "Installed Plugins:"
+ls -lh ${SONAR_DIR}/extensions/plugins/
+echo "===================================================="
 
 # =========================================================
-# Show Logs
+# Show Sonar Logs
 # =========================================================
-tail -n 50 ${SONAR_DIR}/logs/sonar.log
+tail -n 50 ${SONAR_DIR}/logs/web.log
+
+# =========================================================
+# Final Info
+# =========================================================
+echo "===================================================="
+echo "SonarQube Started Successfully"
+echo "URL: http://<EC2-PUBLIC-IP>:9000"
+echo "SonarQube Version : ${SONAR_VERSION}"
+echo "Plugin Version    : ${PLUGIN_VERSION}"
+echo "Java Version      : 17"
+echo "===================================================="
