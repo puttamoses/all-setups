@@ -1,37 +1,115 @@
 #!/bin/bash
+set -e
 
-# Update packages
+# =========================================================
+# Latest SonarQube Community Edition Setup
+# Ubuntu + Java 17
+# =========================================================
+
+SONAR_VERSION="25.5.0.107428"
+SONAR_ZIP="sonarqube-${SONAR_VERSION}.zip"
+SONAR_DIR="/opt/sonarqube-${SONAR_VERSION}"
+SONAR_USER="sonar"
+
+# =========================================================
+# Update System
+# =========================================================
 sudo apt update -y
 
-# Install dependencies
-sudo apt install -y openjdk-11-jdk unzip wget
+# =========================================================
+# Install Java 17 + Utilities
+# =========================================================
+sudo apt install -y \
+openjdk-17-jdk \
+wget \
+unzip \
+curl
 
-# Go to /opt
+# =========================================================
+# Verify Java
+# =========================================================
+java -version
+
+# =========================================================
+# Create Sonar User
+# =========================================================
+sudo useradd -m -d /home/${SONAR_USER} -s /bin/bash ${SONAR_USER} || true
+
+# =========================================================
+# Download Latest SonarQube
+# =========================================================
 cd /opt
 
-# Download SonarQube (if not already downloaded)
-if [ ! -f sonarqube-8.9.6.50800.zip ]; then
-  sudo wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-8.9.6.50800.zip
+if [ ! -f "${SONAR_ZIP}" ]; then
+    sudo wget https://binaries.sonarsource.com/Distribution/sonarqube/${SONAR_ZIP}
 fi
 
-# Unzip (only if not already extracted)
-if [ ! -d sonarqube-8.9.6.50800 ]; then
-  sudo unzip sonarqube-8.9.6.50800.zip
+# =========================================================
+# Extract SonarQube
+# =========================================================
+if [ ! -d "${SONAR_DIR}" ]; then
+    sudo unzip ${SONAR_ZIP}
 fi
 
-# Create sonar user with home directory
-sudo useradd -m sonar || true
+# =========================================================
+# Permissions
+# =========================================================
+sudo chown -R ${SONAR_USER}:${SONAR_USER} ${SONAR_DIR}
 
-# Set permissions
-sudo chown -R sonar:sonar /opt/sonarqube-8.9.6.50800
+# =========================================================
+# Kernel Settings
+# =========================================================
+echo "vm.max_map_count=524288" | sudo tee -a /etc/sysctl.conf
+echo "fs.file-max=131072" | sudo tee -a /etc/sysctl.conf
 
-# Kernel settings (required for SonarQube)
-sudo sysctl -w vm.max_map_count=262144
-sudo sysctl -w fs.file-max=65536
+sudo sysctl -p
 
-# Switch to sonar user and start SonarQube
-sudo -u sonar bash <<EOF
-ulimit -n 65536
-ulimit -u 4096
-/opt/sonarqube-8.9.6.50800/bin/linux-x86-64/sonar.sh start
+# =========================================================
+# Limits
+# =========================================================
+echo "${SONAR_USER} soft nofile 131072" | sudo tee -a /etc/security/limits.conf
+echo "${SONAR_USER} hard nofile 131072" | sudo tee -a /etc/security/limits.conf
+echo "${SONAR_USER} soft nproc 8192" | sudo tee -a /etc/security/limits.conf
+echo "${SONAR_USER} hard nproc 8192" | sudo tee -a /etc/security/limits.conf
+
+# =========================================================
+# Install Dependency-Check Plugin
+# =========================================================
+cd /tmp
+
+wget -O sonar-dependency-check-plugin.jar \
+https://github.com/dependency-check/dependency-check-sonar-plugin/releases/latest/download/sonar-dependency-check-plugin.jar
+
+sudo cp sonar-dependency-check-plugin.jar \
+${SONAR_DIR}/extensions/plugins/
+
+# =========================================================
+# Start SonarQube
+# =========================================================
+sudo -u ${SONAR_USER} bash <<EOF
+ulimit -n 131072
+ulimit -u 8192
+
+${SONAR_DIR}/bin/linux-x86-64/sonar.sh stop || true
+${SONAR_DIR}/bin/linux-x86-64/sonar.sh start
 EOF
+
+# =========================================================
+# Wait for Startup
+# =========================================================
+sleep 40
+
+# =========================================================
+# Status
+# =========================================================
+echo "========================================================="
+echo "SonarQube Started Successfully"
+echo "URL: http://<EC2-PUBLIC-IP>:9000"
+echo "SonarQube Version: ${SONAR_VERSION}"
+echo "Java Version: 17"
+echo "========================================================="
+
+# =========================================================
+# Show Logs
+# =========================================================
+tail -n 50 ${SONAR_DIR}/logs/sonar.log
